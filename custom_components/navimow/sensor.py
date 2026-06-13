@@ -111,6 +111,25 @@ SENSOR_DESCRIPTIONS: tuple[NavimowSensorEntityDescription, ...] = (
             (loc.get("mow_progress") or 0) / 100
             if (loc := c.get_device_location()) else None
         ),
+    NavimowSensorEntityDescription(
+        key="work_area",
+        name="Work Area",
+        native_unit_of_measurement="m²",
+        icon="mdi:texture-box",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda c: (
+            state.metrics.get("workArea") if (state := c.get_device_state()) and state.metrics else None
+        ),
+    ),
+    NavimowSensorEntityDescription(
+        key="work_time",
+        name="Work Time",
+        native_unit_of_measurement="s",
+        icon="mdi:clock",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda c: (
+            state.metrics.get("workTime") if (state := c.get_device_state()) and state.metrics else None
+        ),
     ),
 )
 

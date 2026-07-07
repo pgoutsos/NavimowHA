@@ -118,6 +118,12 @@ template:
       # Gate status: Closed / Open / Opening / Closing.
       # Direction while moving is inferred from which endpoint we most
       # recently LEFT (the sensor that most recently flipped to 'on').
+      # FAULT HANDLING (added 2026-07-07): both endpoints 'off' at once is
+      # physically impossible -- one sensor is stale or stuck (e.g. a lost
+      # Z-Wave report; happened live when a dead repeater ate the open
+      # sensor's leave-endpoint report and the gate showed "Open" while
+      # physically closed, silently disarming every open/interlock safety
+      # net). In that case trust the endpoint that reported most RECENTLY.
       - name: "Garden gate status"
         unique_id: garden_gate_status
         icon: mdi:gate
@@ -125,13 +131,19 @@ template:
           {% set cs = states('binary_sensor.garden_gate_closed_steady') %}
           {% set os = states('binary_sensor.garden_gate_open_steady') %}
           {% set assumed = is_state('input_boolean.navimow_gate_assumed_open', 'on') %}
-          {{ 'Closed'  if (cs == 'off' and os == 'on')
-             else 'Open' if (os == 'off' or (assumed and cs != 'off'))
-             else (('Opening' if states.binary_sensor.garden_gate_closed_steady.last_changed
-                                  > states.binary_sensor.garden_gate_open_steady.last_changed
-                    else 'Closing')
-                   if (cs == 'on' and os == 'on')
-                   else 'Unknown') }}
+          {% set c_t = states.binary_sensor.garden_gate_closed_steady.last_changed %}
+          {% set o_t = states.binary_sensor.garden_gate_open_steady.last_changed %}
+          {% if cs == 'off' and os == 'off' %}
+            {{ 'Closed' if c_t > o_t else 'Open' }}
+          {% elif cs == 'off' %}
+            Closed
+          {% elif os == 'off' or assumed %}
+            Open
+          {% elif cs == 'on' and os == 'on' %}
+            {{ 'Opening' if c_t > o_t else 'Closing' }}
+          {% else %}
+            Unknown
+          {% endif %}
 
       # Live PHYSICAL mowing zone (fork's type:2 currentMowBoundary). Works for
       # "mow all" too. Keep this names map IN SYNC with "Navimow current zone".
@@ -811,3 +823,39 @@ automation:
       - service: input_boolean.turn_off
         target:
           entity_id: input_boolean.navimow_gate_assumed_open
+
+  # SENSOR FAULT ALERT: both endpoint sensors claiming "at my stop" at the
+  # same time is physically impossible -- one of them is stale or stuck
+  # (lost Z-Wave report, dead repeater/battery, jammed reed). The status
+  # sensor above falls back to the most recently changed endpoint so the
+  # automations keep working, but the faulty sensor needs attention.
+  - id: navimow_gate_sensor_fault_alert
+    alias: "Navimow Gate - Alert on endpoint sensor fault (both engaged)"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.garden_gate_closed_steady
+        to: "off"
+        for: "00:00:30"
+      - platform: state
+        entity_id: binary_sensor.garden_gate_open_steady
+        to: "off"
+        for: "00:00:30"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.garden_gate_closed_steady
+        state: "off"
+      - condition: state
+        entity_id: binary_sensor.garden_gate_open_steady
+        state: "off"
+    action:
+      - service: persistent_notification.create
+        data:
+          notification_id: navimow_gate_sensor_fault
+          title: "Garden gate sensor fault"
+          message: >-
+            Both gate endpoint sensors report the gate is at their stop at the
+            same time (impossible). One sensor is stale or stuck -- check
+            Z-Wave repeater/mesh health, sensor batteries, and magnet
+            alignment. Gate status is falling back to whichever endpoint
+            reported most recently.

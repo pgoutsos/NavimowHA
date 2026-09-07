@@ -349,7 +349,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 loop=hass.loop,
                 records=devices,
                 # broker 每小时断连时，优先用 MQTT 协议层 keepalive（PINGREQ/PINGRESP）保活。
-                keepalive_seconds=2400,  # 40 分钟
+                keepalive_seconds=60,  # 2026-09-07: was 2400 (40 min). A dropped socket went undetected 26+ min; 60s => paho detects a dead peer in ~90s and auto-reconnects.
                 reconnect_min_delay=1,
                 reconnect_max_delay=60,
             )

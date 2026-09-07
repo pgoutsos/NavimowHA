@@ -9,7 +9,7 @@
   "issue_tracker": "https://github.com/segwaynavimow/NavimowHA/issues",
   "iot_class": "cloud_polling",
   "requirements": [
-    "navimow-sdk>=0.1.2"
+    "navimow-sdk==0.1.2"
   ],
   "version": "1.1.0+position.3"
 }

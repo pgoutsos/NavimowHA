@@ -138,8 +138,25 @@ class NavimowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except ConfigEntryAuthFailed:
             raise
 
+        # Fixes upstream issue #71:
+        # https://github.com/segwaynavimow/NavimowHA/issues/71
+        # The SDK's MQTT cache (mower_sdk.state_manager) is a bare "last message
+        # ever received" slot: no timestamp, no expiry, never cleared. Re-applying
+        # it every tick regardless of age replays a stale state forever once the
+        # mower stops publishing (which is exactly what docking does), clobbering
+        # the fresher HTTP value on every tick where the hourly fallback is
+        # throttled out. So compute freshness FIRST and only re-apply the cache
+        # while it is genuinely fresh. Genuinely-new pushes are unaffected: they
+        # arrive via _handle_state -> _update_from_state, which sets the state
+        # directly and does not depend on this block.
+        now = time.monotonic()
+        mqtt_fresh = (
+            self._last_mqtt_update is not None
+            and now - self._last_mqtt_update <= MQTT_STALE_SECONDS
+        )
+
         cached_state = self.sdk.get_cached_state(self.device.id)
-        if cached_state is not None:
+        if cached_state is not None and mqtt_fresh:
             self._last_state = cached_state
             self._last_data_source = "mqtt_cache"
 
@@ -147,11 +164,7 @@ class NavimowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if cached_attrs is not None:
             self._last_attributes = cached_attrs
 
-        now = time.monotonic()
-        is_mqtt_stale = (
-            self._last_mqtt_update is None
-            or now - self._last_mqtt_update > MQTT_STALE_SECONDS
-        )
+        is_mqtt_stale = not mqtt_fresh
         can_http_fetch = (
             self._last_http_fetch is None
             or now - self._last_http_fetch > HTTP_FALLBACK_MIN_INTERVAL

@@ -35,10 +35,22 @@ MQTT_PASSWORD: Final | None = None
 UPDATE_INTERVAL: Final = 30
 
 # MQTT 超时时间（秒），超过该时间未收到消息则走 HTTP 兜底
-MQTT_STALE_SECONDS: Final = 300
+#
+# Lowered from 300. While MQTT keeps pushing this changes nothing; it only
+# decides how quickly we notice that it went quiet.
+MQTT_STALE_SECONDS: Final = 120
 
 # HTTP 兜底最小拉取间隔（秒），避免频繁请求
-HTTP_FALLBACK_MIN_INTERVAL: Final = 3600
+#
+# Lowered from 3600. With an hour between polls, Home Assistant can lag by up
+# to an hour whenever the MQTT link drops, which is precisely what happens in
+# the parts of the garden with poor reception. Measured case: the mower drove
+# home for 25 minutes while Home Assistant still reported "mowing", so a
+# return-to-dock automation never fired.
+#
+# Cost: zero requests while MQTT is pushing. Only during an outage does this
+# poll, at most twenty times per hour.
+HTTP_FALLBACK_MIN_INTERVAL: Final = 180
 
 # MowerStatus 到 LawnMowerActivity 的映射
 MOWER_STATUS_TO_ACTIVITY = {
